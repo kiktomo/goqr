@@ -175,19 +175,21 @@ var alphanumTable = map[byte]int{
 
 // Errors introduced by this package
 var (
-	ErrInvalidVersion  = errors.New("goqr: invalid qrcode version (1-40)")
-	ErrInvalidLevel    = errors.New("goqr: invalid qrcode error correctionlevel (ECLevelL,M,Q,H)")
-	ErrInvalidDataSize = errors.New("goqr: invalid data size")
+	ErrInvalidVersion        = errors.New("goqr: invalid qrcode version (1-40)")
+	ErrInvalidLevel          = errors.New("goqr: invalid qrcode error correctionlevel (ECLevelL,M,Q,H)")
+	ErrInvalidModuleSize     = errors.New("goqr: invalid qrcode module size (>=1)")
+	ErrInvalidQuietZoneWidth = errors.New("goqr: invalid qrcode quiet zone width (>=0)")
+	ErrInvalidDataSize       = errors.New("goqr: invalid data size")
 )
 
-type qrcode struct {
-	version        int     // qrcode version 1-40
-	level          ECLevel // error correction Level
+type Qrcode struct {
+	Version        int     // qrcode version 1-40
+	Level          ECLevel // error correction Level
 	mode           string  //
 	module         [][]int // 2-D matrix [row][col] ( +-1 : data, +-2 : pattern )
 	data           string  // data to encode
-	moduleSize     int     // module size (default 1)
-	quietZoneWidth int     // quiet zone width
+	ModuleSize     int     // module size (default 1)
+	QuietZoneWidth int     // quiet zone width
 	encodedData    []byte  // encoded data
 	penalty        []int   // calculated mask penalty (0-7)
 }
@@ -195,38 +197,48 @@ type qrcode struct {
 // Create encoder & encode
 func Encode(data string, version int, level ECLevel) (image.Image, error) {
 
-	qr := new(qrcode)
+	qr := new(Qrcode)
 	qr.data = data
-	qr.moduleSize = 1
-	qr.quietZoneWidth = 4
-
-	// set version
-	if version < 0 || 40 < version {
-		return nil, ErrInvalidVersion
-	}
-	qr.version = version
-
-	// set level
-	if level != 0 && len(errorCorrectionTable[1][level]) == 0 {
-		return nil, ErrInvalidLevel
-	}
-	qr.level = level
+	qr.Version = version
+	qr.Level = level
+	qr.ModuleSize = 1
+	qr.QuietZoneWidth = 4
 
 	return qr.Encode()
 }
 
 // Module count on a side
-func (qr *qrcode) len() int { return qr.version*4 + (7+1)*2 + 1 }
+func (qr *Qrcode) len() int { return qr.Version*4 + (7+1)*2 + 1 }
 
 // Returns encoded qrcode 2d array ([row][col]bool)
-func (qr *qrcode) Encode() (image.Image, error) {
+func (qr *Qrcode) Encode() (image.Image, error) {
+
+	// check version
+	if qr.Version < 0 || 40 < qr.Version {
+		return nil, ErrInvalidVersion
+	}
+
+	// check level
+	if qr.Level != 0 && len(errorCorrectionTable[1][qr.Level]) == 0 {
+		return nil, ErrInvalidLevel
+	}
+
+	// check module size
+	if qr.ModuleSize < 1 {
+		return nil, ErrInvalidModuleSize
+	}
+
+	// check quiet zone width
+	if qr.QuietZoneWidth < 0 {
+		return nil, ErrInvalidQuietZoneWidth
+	}
 
 	// set encoding mode (kanji mode not supported)
 	qr.selectMode()
 
 	// set version & level
 	qr.selectVersionLevel()
-	if qr.version == 0 || qr.level == 0 {
+	if qr.Version == 0 || qr.Level == 0 {
 		return nil, ErrInvalidDataSize
 	}
 
@@ -263,19 +275,19 @@ func (qr *qrcode) Encode() (image.Image, error) {
 	}
 
 	// quiet zone
-	for i := 0; i < qr.quietZoneWidth; i++ {
+	for i := 0; i < qr.QuietZoneWidth; i++ {
 		module = append(module, make([]bool, qr.len()))
 		module = append([][]bool{make([]bool, qr.len())}, module...)
 	}
 	for i, row := range module {
-		row = append(make([]bool, qr.quietZoneWidth), row...)
-		row = append(row, make([]bool, qr.quietZoneWidth)...)
+		row = append(make([]bool, qr.QuietZoneWidth), row...)
+		row = append(row, make([]bool, qr.QuietZoneWidth)...)
 		module[i] = row
 	}
 
 	// module size
-	if qr.moduleSize > 1 {
-		l := len(module) * qr.moduleSize
+	if qr.ModuleSize > 1 {
+		l := len(module) * qr.ModuleSize
 		m := make([][]bool, l)
 
 		for i := 0; i < l; i++ {
@@ -287,9 +299,9 @@ func (qr *qrcode) Encode() (image.Image, error) {
 				if !cell {
 					continue
 				}
-				for x := 0; x < qr.moduleSize; x++ {
-					for y := 0; y < qr.moduleSize; y++ {
-						m[r*qr.moduleSize+x][c*qr.moduleSize+y] = true
+				for x := 0; x < qr.ModuleSize; x++ {
+					for y := 0; y < qr.ModuleSize; y++ {
+						m[r*qr.ModuleSize+x][c*qr.ModuleSize+y] = true
 					}
 				}
 			}
@@ -313,29 +325,29 @@ func (qr *qrcode) Encode() (image.Image, error) {
 }
 
 // qrcode version information table
-func (qr *qrcode) table() []int         { return errorCorrectionTable[qr.version][qr.level] }
-func (qr *qrcode) ecCodeWords() int     { return qr.table()[0] }
-func (qr *qrcode) dataCodeWords() []int { return []int{qr.table()[2], qr.table()[4]} }
-func (qr *qrcode) blkCount() []int      { return []int{qr.table()[1], qr.table()[3]} }
+func (qr *Qrcode) table() []int         { return errorCorrectionTable[qr.Version][qr.Level] }
+func (qr *Qrcode) ecCodeWords() int     { return qr.table()[0] }
+func (qr *Qrcode) dataCodeWords() []int { return []int{qr.table()[2], qr.table()[4]} }
+func (qr *Qrcode) blkCount() []int      { return []int{qr.table()[1], qr.table()[3]} }
 
 // total code words
-func (qr *qrcode) totalCodeWords() int {
+func (qr *Qrcode) totalCodeWords() int {
 	table := qr.table()
 	return (table[0]+table[2])*table[1] + (table[0]+table[4])*table[3]
 }
 
 // total data code words
-func (qr *qrcode) totalDataCodeWords() int {
+func (qr *Qrcode) totalDataCodeWords() int {
 	table := qr.table()
 	return table[1]*table[2] + table[3]*table[4]
 }
 
 // total data code bits
-func (qr *qrcode) totalDataCodeBits() int {
+func (qr *Qrcode) totalDataCodeBits() int {
 	return qr.totalDataCodeWords() * 8
 }
 
-func (qr *qrcode) selectMode() {
+func (qr *Qrcode) selectMode() {
 	qr.mode = "numeric"
 	for _, c := range qr.data {
 		if c >= '0' && c <= '9' {
@@ -350,34 +362,34 @@ func (qr *qrcode) selectMode() {
 	}
 }
 
-func (qr *qrcode) selectVersionLevel() {
+func (qr *Qrcode) selectVersionLevel() {
 	firstVer, lastVer := 1, 40
 	errorCorrectionLevel := []ECLevel{ECLevelH, ECLevelQ, ECLevelM, ECLevelL}
 
-	if qr.version > 0 {
-		firstVer, lastVer = qr.version, qr.version
+	if qr.Version > 0 {
+		firstVer, lastVer = qr.Version, qr.Version
 	}
 
-	if qr.level > 0 {
-		errorCorrectionLevel = []ECLevel{qr.level}
+	if qr.Level > 0 {
+		errorCorrectionLevel = []ECLevel{qr.Level}
 	}
 
 	for i := firstVer; i <= lastVer; i++ {
 		for _, j := range errorCorrectionLevel {
 			if maxDataSize(i, j, qr.mode) >= len(qr.data) {
-				qr.version, qr.level = i, j
+				qr.Version, qr.Level = i, j
 				return
 			}
 		}
 	}
-	qr.version, qr.level = 0, 0
+	qr.Version, qr.Level = 0, 0
 }
 
-func (qr *qrcode) setTypeBits(mask int) {
-	qr.module = setTypeBits(qr.module, qr.level, mask)
+func (qr *Qrcode) setTypeBits(mask int) {
+	qr.module = setTypeBits(qr.module, qr.Level, mask)
 }
 
-func (qr *qrcode) placePatterns() {
+func (qr *Qrcode) placePatterns() {
 
 	isBlank := func(r, c int) bool { return qr.module[r][c] == 0 }
 
@@ -403,7 +415,7 @@ func (qr *qrcode) placePatterns() {
 	}
 
 	// alignment pattern
-	pat := positionAdjustPatternTable[qr.version]
+	pat := positionAdjustPatternTable[qr.Version]
 
 	for i := 0; i < len(pat); i++ {
 		for j := 0; j < len(pat); j++ {
@@ -447,8 +459,8 @@ func (qr *qrcode) placePatterns() {
 	}
 
 	// version information
-	if qr.version >= 7 {
-		versionBits := versionInformationTable[qr.version-7]
+	if qr.Version >= 7 {
+		versionBits := versionInformationTable[qr.Version-7]
 
 		for j := 0; j < 6; j++ {
 			for k := qr.len() - 11; k < qr.len()-8; k++ {
@@ -472,7 +484,7 @@ func (qr *qrcode) placePatterns() {
 
 }
 
-func (qr *qrcode) mapData() {
+func (qr *Qrcode) mapData() {
 
 	// byte slice to bit slice
 	bitbuf := new(bitBuffer)
@@ -481,7 +493,7 @@ func (qr *qrcode) mapData() {
 	}
 
 	// reminder bits
-	switch qr.version {
+	switch qr.Version {
 	case 2, 3, 4, 5, 6:
 		bitbuf.append(0, 7)
 	case 14, 15, 16, 17, 18, 19, 20, 28, 29, 30, 31, 32, 33, 34:
@@ -530,7 +542,7 @@ func (qr *qrcode) mapData() {
 	}
 }
 
-func (qr *qrcode) maskData() {
+func (qr *Qrcode) maskData() {
 
 	qr.penalty = make([]int, 8)
 	c := make(chan int, 8) // channel
@@ -558,7 +570,7 @@ func (qr *qrcode) maskData() {
 	qr.module = maskData(mask, qr.module)
 }
 
-func (qr *qrcode) errorCorrectionCode(data []byte, block, blockIndex int, c chan int) {
+func (qr *Qrcode) errorCorrectionCode(data []byte, block, blockIndex int, c chan int) {
 
 	eccw := qr.ecCodeWords()                             // ec code word per block
 	totalBlkCount := qr.blkCount()[0] + qr.blkCount()[1] // total blocks
@@ -606,7 +618,7 @@ func (qr *qrcode) errorCorrectionCode(data []byte, block, blockIndex int, c chan
 	c <- 1
 }
 
-func (qr *qrcode) encodeData() {
+func (qr *Qrcode) encodeData() {
 
 	// total data code words
 	dcw := qr.totalDataCodeWords()
@@ -657,7 +669,7 @@ func (qr *qrcode) encodeData() {
 }
 
 // encode data ( numeric mode )
-func (qr *qrcode) encodeNumeric() []byte {
+func (qr *Qrcode) encodeNumeric() []byte {
 
 	// working bit array
 	bitbuf := new(bitBuffer)
@@ -667,9 +679,9 @@ func (qr *qrcode) encodeNumeric() []byte {
 
 	// character count indicator
 	switch {
-	case qr.version <= 9:
+	case qr.Version <= 9:
 		bitbuf.append(len(qr.data), 10)
-	case qr.version <= 26:
+	case qr.Version <= 26:
 		bitbuf.append(len(qr.data), 12)
 	default:
 		bitbuf.append(len(qr.data), 14)
@@ -701,7 +713,7 @@ func (qr *qrcode) encodeNumeric() []byte {
 }
 
 // encode data ( alphanumeric mode )
-func (qr *qrcode) encodeAlphanum() []byte {
+func (qr *Qrcode) encodeAlphanum() []byte {
 
 	// working bit array
 	bitbuf := new(bitBuffer)
@@ -711,9 +723,9 @@ func (qr *qrcode) encodeAlphanum() []byte {
 
 	// character count indicator
 	switch {
-	case qr.version <= 9:
+	case qr.Version <= 9:
 		bitbuf.append(len(qr.data), 9)
-	case qr.version <= 26:
+	case qr.Version <= 26:
 		bitbuf.append(len(qr.data), 11)
 	default:
 		bitbuf.append(len(qr.data), 13)
@@ -739,7 +751,7 @@ func (qr *qrcode) encodeAlphanum() []byte {
 }
 
 // encode data ( 8bitbyte mode )
-func (qr *qrcode) encodeByte() []byte {
+func (qr *Qrcode) encodeByte() []byte {
 
 	// working bit array
 	bitbuf := new(bitBuffer)
@@ -749,9 +761,9 @@ func (qr *qrcode) encodeByte() []byte {
 
 	// character count indicator
 	switch {
-	case qr.version <= 9:
+	case qr.Version <= 9:
 		bitbuf.append(len(qr.data), 8)
-	case qr.version <= 26:
+	case qr.Version <= 26:
 		bitbuf.append(len(qr.data), 16)
 	default:
 		bitbuf.append(len(qr.data), 16)
@@ -769,11 +781,11 @@ func (qr *qrcode) encodeByte() []byte {
 	return bitbuf.bytes()
 }
 
-func (qr *qrcode) calcPenalty(mask int, c chan int) {
+func (qr *Qrcode) calcPenalty(mask int, c chan int) {
 
 	penalty := 0
 
-	module := maskData(mask, setTypeBits(qr.module, qr.level, mask))
+	module := maskData(mask, setTypeBits(qr.module, qr.Level, mask))
 
 	isColored := func(r, c int) bool { return module[r][c] > 0 }
 
