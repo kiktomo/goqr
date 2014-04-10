@@ -175,16 +175,16 @@ var alphanumTable = map[byte]int{
 
 // Errors introduced by this package
 var (
-	ErrInvalidVersion        = errors.New("goqr: invalid qrcode version (1-40)")
-	ErrInvalidLevel          = errors.New("goqr: invalid qrcode error correctionlevel (ECLevelL,M,Q,H)")
-	ErrInvalidModuleSize     = errors.New("goqr: invalid qrcode module size (>=1)")
-	ErrInvalidQuietZoneWidth = errors.New("goqr: invalid qrcode quiet zone width (>=0)")
-	ErrInvalidDataSize       = errors.New("goqr: invalid data size")
+	errInvalidVersion        = errors.New("goqr: invalid qrcode version (1-40)")
+	errInvalidLevel          = errors.New("goqr: invalid qrcode error correctionlevel (ECLevelL,M,Q,H)")
+	errInvalidModuleSize     = errors.New("goqr: invalid qrcode module size (>=1)")
+	errInvalidQuietZoneWidth = errors.New("goqr: invalid qrcode quiet zone width (>=0)")
+	errInvalidDataSize       = errors.New("goqr: invalid data size")
 )
 
 type Qrcode struct {
-	Version        int     // qrcode version 1-40
-	Level          ECLevel // error correction Level
+	Version        int     // qrcode version 1-40 (0:auto)
+	Level          ECLevel // error correction Level (0:auto)
 	mode           string  //
 	module         [][]int // 2-D matrix [row][col] ( +-1 : data, +-2 : pattern )
 	data           string  // data to encode
@@ -194,7 +194,6 @@ type Qrcode struct {
 	penalty        []int   // calculated mask penalty (0-7)
 }
 
-// Create encoder & encode
 func Encode(data string, version int, level ECLevel) (image.Image, error) {
 
 	qr := new(Qrcode)
@@ -210,27 +209,26 @@ func Encode(data string, version int, level ECLevel) (image.Image, error) {
 // Module count on a side
 func (qr *Qrcode) len() int { return qr.Version*4 + (7+1)*2 + 1 }
 
-// Returns encoded qrcode 2d array ([row][col]bool)
 func (qr *Qrcode) Encode() (image.Image, error) {
 
 	// check version
 	if qr.Version < 0 || 40 < qr.Version {
-		return nil, ErrInvalidVersion
+		return nil, errInvalidVersion
 	}
 
 	// check level
 	if qr.Level != 0 && len(errorCorrectionTable[1][qr.Level]) == 0 {
-		return nil, ErrInvalidLevel
+		return nil, errInvalidLevel
 	}
 
 	// check module size
 	if qr.ModuleSize < 1 {
-		return nil, ErrInvalidModuleSize
+		return nil, errInvalidModuleSize
 	}
 
 	// check quiet zone width
 	if qr.QuietZoneWidth < 0 {
-		return nil, ErrInvalidQuietZoneWidth
+		return nil, errInvalidQuietZoneWidth
 	}
 
 	// set encoding mode (kanji mode not supported)
@@ -239,7 +237,7 @@ func (qr *Qrcode) Encode() (image.Image, error) {
 	// set version & level
 	qr.selectVersionLevel()
 	if qr.Version == 0 || qr.Level == 0 {
-		return nil, ErrInvalidDataSize
+		return nil, errInvalidDataSize
 	}
 
 	// initialize qrcode
